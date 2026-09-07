@@ -1,0 +1,650 @@
+DRVEXO 用户二次开发说明
+========================
+
+一、开发入口
+------------
+
+用户代码位于 User_Data 分组：
+
+1. User_Data/Inc/User_main.h
+   声明用户开发入口 void User_main(void)。
+
+2. User_Data/Src/User_main.c
+   用户主要编辑此文件。系统完成硬件、传感器、电机和后台任务初始化后，
+   会进入 User_main()。User_main() 内部的 while (1) 是用户永久运行区。
+
+3. User_Data/Inc/User_Data.h
+   提供传感器数据结构体、公开数据变量、语音、LED和电机控制接口。
+
+平台的 IMU、气压计、FDCAN、电机反馈、语音和LED任务由 TIM7
+中断调度器在后台运行。用户不需要在 User_main() 中调用平台调度器。
+系统启动后台FDCAN后会最多等待1秒获取有效电池帧；收到数据时先播报当前
+电池电量，再进入User_main()。未连接电池时超时后直接进入User_main()。
+
+重要注意事项：
+
+- 不要在用户代码中长时间关闭中断，否则后台传感器和通信任务会停止。
+- User_main() 不应返回；用户业务应持续写在其 while (1) 中。
+- 用户应优先读取 User_Data 提供的变量并调用 User_ 开头的接口，避免直接
+  依赖 APP、Device、Platform 或 Sys 内部模块。
+- 传感器和电机反馈由中断后台异步刷新。需要组合使用多个字段时，建议先
+  复制到用户自己的局部结构体，再进行计算，避免重复读取正在变化的数据。
+
+简单示例：
+
+void User_main(void)
+{
+    float roll;
+    float left_temperature;
+
+    (void)User_LED_Blink_Time_Set(500U);
+    (void)User_LED_Blink();
+
+    while (1)
+    {
+        roll = User_IMU_Data.user_euler.roll;
+        left_temperature = User_Motor_Data.left.temperature_deg_c;
+
+        /* 在此处根据传感器数据编写用户控制逻辑。 */
+        (void)roll;
+        (void)left_temperature;
+    }
+}
+
+
+二、公共枚举
+------------
+
+1. User_Motor_direction_en
+
+USER_MOTOR_LEFT
+    左电机。
+
+USER_MOTOR_RIGHT
+    右电机。
+
+2. User_Motor_control_mode_en
+
+USER_MOTOR_CONTROL_MODE_TORQUE
+    力矩模式。目标值通过User_Motor_Torque_Set()发送。
+
+USER_MOTOR_CONTROL_MODE_VELOCITY
+    速度模式。目标值通过User_Motor_Velocity_Set()发送。
+
+USER_MOTOR_CONTROL_MODE_POSITION
+    位置模式，底层使用二阶位置滤波跟踪。目标值通过
+    User_Motor_Position_Set()发送。
+
+三、IMU 数据结构体和变量
+------------------------
+
+公开变量：
+
+extern struct User_IMU_data_t User_IMU_Data;
+
+该变量由 IMU 姿态更新任务自动刷新，用户通常只读取，不需要手动更新。
+
+1. struct User_IMU_gyro_t
+
+x、y、z
+    三轴角速度，单位为 dps（度/秒）。
+
+2. struct User_IMU_acc_t
+
+x、y、z
+    三轴加速度，单位为 g。
+
+3. struct User_IMU_euler_t
+
+roll
+    横滚角，单位为度。
+
+pitch
+    俯仰角，单位为度。
+
+yaw
+    航向角，单位为度。
+
+4. struct User_IMU_quaternion_t
+
+w、x、y、z
+    姿态四元数，w为实部，x、y、z为虚部，无单位。
+
+5. struct User_IMU_data_t
+
+user_gyro
+    struct User_IMU_gyro_t，角速度数据。
+
+user_acc
+    struct User_IMU_acc_t，加速度数据。
+
+user_euler
+    struct User_IMU_euler_t，欧拉角数据。
+
+user_quaternion
+    struct User_IMU_quaternion_t，四元数数据。
+
+
+四、气压计数据结构体和变量
+--------------------------
+
+公开变量：
+
+extern struct User_Barometer_data_t User_Barometer_Data;
+
+该变量由气压计任务自动刷新。
+
+struct User_Barometer_data_t 字段：
+
+pressure_hpa
+    当前气压，单位为 hPa。
+
+altitude_m
+    当前海拔，单位为 m。
+
+temperature_deg_c
+    气压计温度，单位为摄氏度。
+
+altitude_ready
+    海拔有效标志。为1时海拔数据已准备好，为0时不应使用海拔值做控制。
+
+
+五、电机数据结构体和变量
+------------------------
+
+公开变量：
+
+extern struct User_Motor_data_t User_Motor_Data;
+
+该变量由FDCAN电机反馈任务自动刷新。
+
+1. struct User_Motor_feedback_t
+
+fault_code
+    电机故障码。0通常表示当前未报告故障，其他值由电机协议定义。
+
+power_status
+    电机系统电源状态原始值，取自电机反馈状态字节的高4位；具体数值含义以电机协议为准。
+
+system_mode
+    电机周期反馈中的系统模式，类型为User_Motor_system_mode_en。
+    FDCAN后台任务会将电机原始编码转换为连续编号；尚未收到对应电机
+    反馈或收到未定义编码时为USER_MOTOR_SYSTEM_MODE_UNKNOWN。
+
+User_Motor_system_mode_en取值：
+
+USER_MOTOR_SYSTEM_MODE_UNKNOWN = 0
+    未知模式或尚未收到有效反馈。
+
+USER_MOTOR_SYSTEM_MODE_REST = 1
+    休息模式。
+
+USER_MOTOR_SYSTEM_MODE_COMFORT = 2
+    舒适模式。
+
+USER_MOTOR_SYSTEM_MODE_SPORTS = 3
+    运动模式。
+
+USER_MOTOR_SYSTEM_MODE_DAMPING = 4
+    阻尼模式。
+
+原始模式转换关系：5转为休息模式1，0转为舒适模式2，2转为运动模式3，
+4转为阻尼模式4。其他原始值转为未知模式0。
+
+注意：system_mode是电机上报的系统运行模式，不是
+User_Motor_MIT_Mode_Set()设置的电机控制器模式。
+
+torque_level
+    电机当前力矩挡位，类型为User_Motor_torque_level_en。0表示未知，
+    1至4分别表示第一至第四级。原始值25、50、75、100会依次转换为
+    1、2、3、4，其他原始值转换为0。
+
+input_position
+    电机输入端位置。
+
+output_position
+    电机输出端位置。
+
+torque
+    电机实际反馈力矩。
+
+current
+    电机实际反馈电流。
+
+input_velocity
+    电机输入端速度。
+
+input_acceleration
+    电机输入端加速度。
+
+output_velocity
+    电机输出端速度。
+
+output_acceleration
+    电机输出端加速度。
+
+temperature_deg_c
+    电机温度，单位为摄氏度。
+
+位置、速度、加速度、力矩和电流保持电机通信协议的原始物理单位，用户层
+不进行二次缩放。进行控制前应以所用电机固件的协议单位和允许范围为准。
+
+2. struct User_Motor_data_t
+
+left
+    左电机完整反馈，类型为 struct User_Motor_feedback_t。
+
+right
+    右电机完整反馈，类型为 struct User_Motor_feedback_t。
+
+
+六、数据刷新函数
+----------------
+
+void User_IMU_Data_Update(void)
+    将平台最新角速度、加速度、欧拉角和四元数复制到 User_IMU_Data。
+    IMU后台任务会自动调用；用户也可以主动调用，以立即获取平台当前最新快照。
+
+void User_Barometer_Data_Update(void)
+    将最新气压、海拔、温度和有效标志复制到 User_Barometer_Data。
+    气压计后台任务会自动调用；用户也可以主动调用，以立即获取平台当前最新快照。
+
+void User_Motor_Data_Update(void)
+    将左右电机最新反馈复制到User_Motor_Data。FDCAN后台任务会自动调用；
+    用户也可以主动调用，以立即获取平台当前最新电机反馈。
+
+
+七、语音和LED接口
+-----------------
+
+int32_t User_Voice_Enqueue(uint8_t voice_id)
+
+作用：
+    将一条语音加入后台播放队列。接口只负责入队，不会阻塞等待播放完成。
+
+参数：
+    voice_id：语音编号，不能为0；具体编号必须与语音芯片中的语音资源一致。
+
+返回值：
+    0：入队成功。
+    -2：voice_id无效。
+    -4：语音队列已满，可稍后重试。
+
+int32_t User_LED_On(void)
+
+作用：
+    立即停止闪烁并使LED保持常亮。
+
+返回值：
+    0：设置成功。
+    负值：LED GPIO控制失败。
+
+int32_t User_LED_Off(void)
+
+作用：
+    立即停止闪烁并使LED保持常灭。
+
+返回值：
+    0：设置成功。
+    负值：LED GPIO控制失败。
+
+int32_t User_LED_Blink(void)
+
+作用：
+    使LED进入闪烁模式，使用最近一次设置的闪烁间隔。
+
+返回值：
+    0：设置成功。
+    -7：LED后台任务尚未准备好。
+
+int32_t User_LED_Blink_Time_Set(uint16_t blink_time_ms)
+
+作用：
+    设置LED每次亮灭翻转的间隔。
+
+参数：
+    blink_time_ms：翻转间隔，单位为ms，不能为0。
+    例如设置500ms时，LED每500ms改变一次状态，一个完整亮灭周期约为1000ms。
+
+返回值：
+    0：设置成功。
+    -2：参数为0。
+    -7：LED后台任务尚未准备好。
+
+使用示例：
+
+User_LED_On();
+User_LED_Off();
+User_LED_Blink_Time_Set(500U);
+User_LED_Blink();
+
+
+八、电机控制接口
+----------------
+
+力矩、速度和位置控制的建议顺序：
+
+1. 使用User_Motor_Mode_Set()选择力矩、速度或位置模式。
+2. 使用User_Motor_Enable()使能指定电机。
+3. 使用与模式对应的目标值设置函数周期发送控制目标。
+4. 不再控制时使用User_Motor_Disable()失能电机。
+
+模式设置、使能和失能命令的默认应答超时为100ms，由
+USER_MOTOR_COMMAND_TIMEOUT_MS定义。
+
+int32_t User_Motor_Mode_Set(User_Motor_direction_en direction,
+                            User_Motor_control_mode_en mode)
+    设置力矩、速度或位置控制模式，不执行使能。位置模式固定映射为电机固件的
+    二阶位置滤波模式。
+
+int32_t User_Motor_Torque_Set(User_Motor_direction_en direction, float torque)
+    发送力矩模式的目标力矩，力矩单位和安全范围由电机固件定义。
+
+int32_t User_Motor_Velocity_Set(User_Motor_direction_en direction, float velocity)
+    发送速度模式的目标速度，单位rad/s。
+
+int32_t User_Motor_Position_Set(User_Motor_direction_en direction, float position)
+    发送位置模式的目标位置，单位rad。
+
+MIT接口继续保留，用于需要位置、速度、KP、KD和前馈力矩联合控制的场景：
+
+int32_t User_Motor_MIT_Mode_Set(User_Motor_direction_en direction)
+    仅将指定电机设置为MIT模式，不执行使能。
+
+int32_t User_Motor_Enable(User_Motor_direction_en direction)
+    仅使能指定电机，不自动设置控制模式。
+
+int32_t User_Motor_Disable(User_Motor_direction_en direction)
+    失能指定电机。
+
+int32_t User_Motor_MIT_Set(User_Motor_direction_en direction,
+                           float position,
+                           float velocity,
+                           float kp,
+                           float kd,
+                           float torque)
+    发送MIT联合控制参数：目标位置、目标速度、位置增益KP、速度增益KD和
+    前馈力矩。调用前应先设置MIT模式，再使能对应电机。
+
+电机控制注意事项：
+
+- direction只能是USER_MOTOR_LEFT或USER_MOTOR_RIGHT。
+- 应在电机失能状态下设置控制模式，确认模式设置成功后再使能电机。
+- 力矩、速度、位置目标设置函数必须与当前选择的控制模式对应。
+- 用户层校验电机方向和模式枚举，不限制位置、速度、力矩、KP和KD数值。
+- 控制量单位和允许范围由电机通信协议及电机固件决定，调用前必须确认安全范围。
+- 每次调用都应检查返回值；返回负值时不要继续发送依赖该步骤的控制命令。
+- 电机故障码非0、反馈异常或通信未准备好时，不应继续输出运动控制命令。
+
+
+九、统一返回值说明
+------------------
+
+User_控制函数遵循以下规则：0表示成功，负值表示失败。
+
+0
+    成功。
+
+-1
+    通用错误。
+
+-2
+    参数错误。
+
+-3
+    等待响应超时。
+
+-4
+    设备或资源忙，例如语音队列已满。
+
+-5
+    当前没有数据。
+
+-6
+    底层通信或IO失败。
+
+-7
+    设备或后台任务尚未准备好。
+
+-8
+    当前功能不支持。
+
+不同函数只会返回与自身业务相关的错误值。用户代码应至少按以下方式处理：
+
+int32_t ret = User_Motor_Mode_Set(USER_MOTOR_LEFT,
+                                  USER_MOTOR_CONTROL_MODE_VELOCITY);
+if (ret == 0)
+{
+    ret = User_Motor_Enable(USER_MOTOR_LEFT);
+}
+if (ret == 0)
+{
+    ret = User_Motor_Velocity_Set(USER_MOTOR_LEFT, 1.0f);
+}
+if (ret < 0)
+{
+    /* 记录或处理错误，不继续发送后续控制命令。 */
+}
+
+
+十、用户开发边界
+----------------
+
+- User_Data中的公开数据变量用于向用户提供传感器和电机反馈。
+- User_开头的函数用于向用户提供语音、LED和电机控制能力。
+- APP、Device、Platform和Sys属于平台内部实现，后续版本可能调整，不作为
+  稳定的二次开发接口。
+- 用户业务代码集中放在User_main.c中，新增用户私有结构体和函数时，也应
+  优先放在User_Data目录内，避免修改平台后台任务。
+
+
+十一、自动更新与主动刷新变量统一汇总
+----------------------------------
+
+以下5个变量已经在User_Data.h中公开，并由平台后台任务自动更新。
+用户既可以在User_main.c中直接读取后台已经刷新的数据，也可以在读取前主动
+调用对应的Update函数，将平台当前最新数据立即复制到用户变量。
+
+主动刷新函数均为void类型，调用完成后直接读取对应变量即可。如果底层传感器
+或通信数据尚未准备好，主动刷新不会等待新报文到达，只会复制平台当时已有的
+最新数据；气压计海拔仍应通过altitude_ready判断是否有效。
+
+1. User_IMU_Data
+
+后台自动更新：IMU姿态更新任务自动刷新。
+用户主动刷新：调用User_IMU_Data_Update()。
+
+主动刷新示例：
+
+User_IMU_Data_Update();
+float roll = User_IMU_Data.user_euler.roll;
+
+角速度，单位为dps：
+
+User_IMU_Data.user_gyro.x
+User_IMU_Data.user_gyro.y
+User_IMU_Data.user_gyro.z
+
+加速度，单位为g：
+
+User_IMU_Data.user_acc.x
+User_IMU_Data.user_acc.y
+User_IMU_Data.user_acc.z
+
+欧拉角，单位为度：
+
+User_IMU_Data.user_euler.roll
+User_IMU_Data.user_euler.pitch
+User_IMU_Data.user_euler.yaw
+
+四元数，无单位：
+
+User_IMU_Data.user_quaternion.w
+User_IMU_Data.user_quaternion.x
+User_IMU_Data.user_quaternion.y
+User_IMU_Data.user_quaternion.z
+
+2. User_Barometer_Data
+
+后台自动更新：气压计任务自动刷新。
+用户主动刷新：调用User_Barometer_Data_Update()。
+
+主动刷新示例：
+
+User_Barometer_Data_Update();
+if (User_Barometer_Data.altitude_ready == 1U)
+{
+    float altitude = User_Barometer_Data.altitude_m;
+    (void)altitude;
+}
+
+User_Barometer_Data.pressure_hpa
+    气压，单位为hPa。
+
+User_Barometer_Data.altitude_m
+    海拔，单位为m。
+
+User_Barometer_Data.temperature_deg_c
+    气压计温度，单位为摄氏度。
+
+User_Barometer_Data.altitude_ready
+    海拔有效标志，等于1时才使用altitude_m。
+
+3. User_Motor_Data
+
+后台自动更新：FDCAN电机反馈任务自动刷新。
+用户主动刷新：调用User_Motor_Data_Update()。
+该函数刷新左右电机完整反馈，包括左右电机温度。
+
+主动刷新示例：
+
+User_Motor_Data_Update();
+float left_torque = User_Motor_Data.left.torque;
+
+左电机完整反馈：
+
+User_Motor_Data.left.fault_code
+User_Motor_Data.left.power_status
+User_Motor_Data.left.system_mode
+User_Motor_Data.left.torque_level
+User_Motor_Data.left.input_position
+User_Motor_Data.left.output_position
+User_Motor_Data.left.torque
+User_Motor_Data.left.current
+User_Motor_Data.left.input_velocity
+User_Motor_Data.left.input_acceleration
+User_Motor_Data.left.output_velocity
+User_Motor_Data.left.output_acceleration
+User_Motor_Data.left.temperature_deg_c
+
+右电机完整反馈：
+
+User_Motor_Data.right.fault_code
+User_Motor_Data.right.power_status
+User_Motor_Data.right.system_mode
+User_Motor_Data.right.torque_level
+User_Motor_Data.right.input_position
+User_Motor_Data.right.output_position
+User_Motor_Data.right.torque
+User_Motor_Data.right.current
+User_Motor_Data.right.input_velocity
+User_Motor_Data.right.input_acceleration
+User_Motor_Data.right.output_velocity
+User_Motor_Data.right.output_acceleration
+User_Motor_Data.right.temperature_deg_c
+
+左右电机属于可选外设。未连接电机时，系统初始化不会等待电机反馈，也不会
+阻塞进入User_main()；连接电机并收到有效FDCAN反馈后，后台任务会自动更新
+User_Motor_Data。用户发送电机控制命令前应确认电机已经连接，并检查控制函数
+的返回值。
+
+4. User_Battery_Level
+
+后台自动更新：FDCAN电池数据任务每次成功收到电池报文后自动刷新。
+用户主动刷新：调用User_Battery_Level_Update()。
+
+主动刷新示例：
+
+User_Battery_Level_Update();
+uint8_t battery_level = User_Battery_Level;
+
+User_Battery_Level
+    当前电池电量百分比，正常范围为0～100，单位为%。如果尚未收到有效的
+    电池报文，该变量保持平台当前已有的值。
+
+十二、USART1用户JustFloat发送接口
+---------------------------------
+
+USART1仅作为用户VOFA+ JustFloat数据发送串口：
+
+发送引脚：PA9（USART1_TX）
+串口参数：230400波特率、8位数据位、1位停止位、无校验位
+电平标准：3.3V TTL，连接主机串口模块时必须共地
+发送方式：DMA非阻塞发送
+
+发送接口：
+
+int32_t User_UART_Send(const float *channel_data, uint16_t channel_count);
+
+channel_data
+    用户需要发送的浮点通道数组。数组顺序对应VOFA+的通道顺序。
+
+channel_count
+    本帧浮点通道数量，范围为1至USER_UART_JUSTFLOAT_MAX_CHANNELS，当前最大为255。
+
+返回值：
+    0：DMA发送启动成功。
+    负值：参数无效、上一次DMA尚未完成或底层发送失败。
+
+接口按照JustFloat协议将浮点通道转换为小端IEEE-754字节流，并在帧末尾自动
+添加00 00 80 7F。用户只需要提供float数组，不需要自行添加协议帧尾。
+
+发送示例：
+
+float send_data[3] = {1.0f, 2.0f, 3.0f};
+
+while (1)
+{
+    User_UART_Send(send_data, 3U);
+    HAL_Delay(100U);
+}
+
+USART1用户接收函数、DMA空闲接收和printf重定向已经取消。User_UART_Send()
+使用内部静态发送帧，必须等待上一次DMA发送完成后才能启动下一帧发送。
+
+十三、电机关机与主控按键唤醒
+----------------------------
+
+左右电机都至少收到过一帧有效FDCAN周期数据后，只要任意一侧反馈的
+power_status为0，平台后台会等待当前按键完全释放，然后自动进入STM32
+Standby低功耗模式。未连接电机或左右电机尚未全部收到有效数据时，不会因为
+缓存初始值为0而误进入Standby。
+
+Standby会丢失RAM运行状态，四个WKUP引脚中的任意一个均可触发复位唤醒：
+
+Standby即STM32“待机模式”，属于深度低功耗状态。进入后CPU、RAM和大部分
+外设停止运行，User_main()、TIM7调度和FDCAN后台任务也会停止。
+唤醒后程序会从复位入口重新执行，不会从休眠前的代码位置继续，
+RAM中未持久化的临时数据不保留。
+
+RIGHT_WKUP1：PA0，PWR_WKUP1
+RIGHT_WKUP2：PA2，PWR_WKUP2
+LEFT_WKUP1：PC13，PWR_WKUP4
+LEFT_WKUP2：PC1，PWR_WKUP6
+
+按键触发Standby唤醒后，需要保持任意WKUP引脚为高电平满1秒。持续时间达到
+1秒后，系统重新执行完整初始化并再次进入User_main()；如果提前释放，主控会
+重新进入Standby。普通上电和普通复位不要求按住唤醒按键。
+
+进入Standby前，平台会关闭VM、5V和3V3外设电源，不会自动播放语音、发送
+电机失能命令或改变用户LED业务逻辑。生产配置LOWPOWER_FLAG_DEBUG保持为0，
+进入Standby后调试器断开属于正常现象。
+
+User_main.h中的USER_POWER_ON_STANDBY_ENABLE用于选择首次启动方式：
+
+0：默认配置。普通上电后直接完成初始化并进入User_main()，待电机
+关机状态触发后再进入Standby。
+
+1：普通上电启动时不进入User_main()，而是在外设电源开启前直接进入
+Standby。按键唤醒并持续按住同一个WKUP引脚满1秒后，系统正常初始化
+并进入User_main()，不会再次因该宏立即休眠。

@@ -1,0 +1,6 @@
+3.嵌入式开发软件/mdk542a[[:space:]].exe filter=lfs diff=lfs merge=lfs -text
+3.嵌入式开发软件/SetupSTM32CubeProgrammer_win64.exe filter=lfs diff=lfs merge=lfs -text
+3.嵌入式开发软件/stm32cubemx-win-v6-17-0.zip filter=lfs diff=lfs merge=lfs -text
+3.嵌入式开发软件/VSCodeUserSetup-x64-1.133.0.exe filter=lfs diff=lfs merge=lfs -text
+3.嵌入式开发软件/Keil_STDPacks/Keil.STM32F4xx_DFP.2.17.1.pack filter=lfs diff=lfs merge=lfs -text
+5.芯片手册/rm0481-stm32h563h573-and-stm32h562-armbased-32bit-mcus-stmicroelectronics.pdf filter=lfs diff=lfs merge=lfs -text

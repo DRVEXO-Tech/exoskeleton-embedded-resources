@@ -906,16 +906,6 @@
           </Files>
         </Group>
         <Group>
-          <GroupName>README</GroupName>
-          <Files>
-            <File>
-              <FileName>version.txt</FileName>
-              <FileType>5</FileType>
-              <FilePath>..\README\version.txt</FilePath>
-            </File>
-          </Files>
-        </Group>
-        <Group>
           <GroupName>User_Data</GroupName>
           <Files>
             <File>

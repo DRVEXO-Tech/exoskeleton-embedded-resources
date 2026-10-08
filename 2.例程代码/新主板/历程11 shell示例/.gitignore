@@ -1,0 +1,31 @@
+# Local tool/cache files
+mx.scratch
+*.bkp
+*~
+.$*
+
+# Keil/MDK build outputs
+MDK-ARM/**/*.uvguix.*
+MDK-ARM/**/Objects/
+MDK-ARM/**/Listings/
+MDK-ARM/**/*.o
+MDK-ARM/**/*.d
+MDK-ARM/**/*.crf
+MDK-ARM/**/*.axf
+MDK-ARM/**/*.hex
+MDK-ARM/**/*.bin
+MDK-ARM/**/*.map
+MDK-ARM/**/*.lst
+MDK-ARM/**/*.htm
+MDK-ARM/**/*.lnp
+MDK-ARM/**/*.dep
+MDK-ARM/**/*.bak
+MDK-ARM/**/*.__i
+MDK-ARM/**/*._ac
+MDK-ARM/**/*.o.tmp
+MDK-ARM/**/JLinkLog.txt
+
+# Common generated files
+*.pyc
+__pycache__/
+*.log

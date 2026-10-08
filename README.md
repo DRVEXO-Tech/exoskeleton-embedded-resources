@@ -4,7 +4,7 @@
 
 ## 机器适用版本
 
-本分支 `new-machines-2026-10-01` 存储适用于 **2026 年 10 月 1 日之后新机器**的嵌入式开发资料。分支名称中的日期表示机器适用版本，不是上传日期。使用例程前，请核对实际主板版本并选择对应目录。
+主分支 `main` 存储适用于 **2026 年 10 月 1 日之后新机器**的嵌入式开发资料，日期分支 `new-machines-2026-10-01` 保留本次资料归档。日期表示机器适用版本，不是上传日期。使用例程前，请核对实际主板版本并选择对应目录。
 
 资料来源：`驭介智能科教外骨骼-嵌入式资料 20261001.zip`，于 2026 年 10 月 8 日归档。去除压缩包最外层包装目录后，完整保留其中 5,173 个文件，共 2,829,063,882 字节，包括新主板、旧主板例程及包内原有构建产物。
 
@@ -36,7 +36,7 @@ f21d427dce2191b3f0257dec523c2b9d9f867f257bedff0963bd7dec7a68724f
 
 ```sh
 git lfs install
-git -c core.longpaths=true -c core.autocrlf=false clone --branch new-machines-2026-10-01 --single-branch https://github.com/DRVEXO-Tech/exoskeleton-embedded-resources.git
+git -c core.longpaths=true -c core.autocrlf=false clone --branch main --single-branch https://github.com/DRVEXO-Tech/exoskeleton-embedded-resources.git
 cd exoskeleton-embedded-resources
 git config core.longpaths true
 git config core.autocrlf false
